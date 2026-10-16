@@ -13,6 +13,7 @@ jobs:
         run: |
           cc -std=c99 -Wall -Wextra -Werror -pedantic iop/udpfs/tests/test_ack_sequence.c -o /tmp/test_udpfs_ack
           /tmp/test_udpfs_ack
+          python3 iop/udpfs/tests/test_send_wait.py
 
   build:
     runs-on: ubuntu-latest

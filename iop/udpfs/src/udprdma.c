@@ -484,26 +484,34 @@ int udprdma_send(udprdma_socket_t *socket, const void *data, uint32_t size)
         USec2SysClock(UDPRDMA_RETX_TIMEOUT_US, &clock);
         SetAlarm(&clock, _timeout_cb, socket);
 
-        /* Wait for ACK or timeout - no WEF_CLEAR to preserve EF_RX_FIN */
-        WaitEventFlag(socket->event_flag, EF_RX_ACK | EF_TIMEOUT,
-            WEF_OR, &evf_bits);
+        /* Keep the original alarm active while ignoring stale ACKs. A burst
+         * of delayed packets must not consume the retransmission budget or
+         * restart the deadline for the outstanding request. */
+        while (1) {
+            WaitEventFlag(socket->event_flag, EF_RX_ACK | EF_TIMEOUT,
+                WEF_OR, &evf_bits);
+            /* Preserve a timeout that fires between WaitEventFlag and this
+             * clear; the original alarm will not fire a second time. */
+            ClearEventFlag(socket->event_flag, ~EF_RX_ACK);
 
-        CancelAlarm(_timeout_cb, socket);
-        ClearEventFlag(socket->event_flag, ~(EF_RX_ACK | EF_TIMEOUT));
-
-        if (evf_bits & EF_RX_ACK) {
-            if (udprdma_ack_covers(socket->tx_seq_nr_acked, sent_seq_nr)) {
+            if ((evf_bits & EF_RX_ACK) &&
+                udprdma_ack_covers(socket->tx_seq_nr_acked, sent_seq_nr)) {
+                CancelAlarm(_timeout_cb, socket);
+                ClearEventFlag(socket->event_flag, ~EF_TIMEOUT);
                 return UDPRDMA_OK;
             }
-            M_PRINTF("send: stale ACK acked=%d sent=%d, retry %d\n",
-                socket->tx_seq_nr_acked, sent_seq_nr, retries + 1);
-        }
 
-        if (evf_bits & EF_TIMEOUT) {
-            M_PRINTF("send: timeout seq=%d, retry %d\n", sent_seq_nr, retries + 1);
+            if (evf_bits & EF_TIMEOUT) {
+                M_PRINTF("send: timeout seq=%d, retry %d\n", sent_seq_nr, retries + 1);
+                break;
+            }
+            M_DEBUG("send: ignored stale ACK acked=%d sent=%d\n",
+                socket->tx_seq_nr_acked, sent_seq_nr);
         }
+        CancelAlarm(_timeout_cb, socket);
+        ClearEventFlag(socket->event_flag, ~EF_TIMEOUT);
 
-        /* Restore sequence number for retransmit */
+        /* Restore sequence number only when the actual send timeout expires. */
         socket->tx_seq_nr = sent_seq_nr;
     }
 
@@ -539,25 +547,34 @@ int udprdma_send_ll(udprdma_socket_t *socket,
         USec2SysClock(UDPRDMA_RETX_TIMEOUT_US, &clock);
         SetAlarm(&clock, _timeout_cb, socket);
 
-        /* Wait for ACK or timeout - no WEF_CLEAR to preserve EF_RX_FIN */
-        WaitEventFlag(socket->event_flag, EF_RX_ACK | EF_TIMEOUT,
-            WEF_OR, &evf_bits);
+        /* Keep the original alarm active while ignoring stale ACKs. A burst
+         * of delayed packets must not consume the retransmission budget or
+         * restart the deadline for the outstanding request. */
+        while (1) {
+            WaitEventFlag(socket->event_flag, EF_RX_ACK | EF_TIMEOUT,
+                WEF_OR, &evf_bits);
+            /* Preserve a timeout that fires between WaitEventFlag and this
+             * clear; the original alarm will not fire a second time. */
+            ClearEventFlag(socket->event_flag, ~EF_RX_ACK);
 
-        CancelAlarm(_timeout_cb, socket);
-        ClearEventFlag(socket->event_flag, ~(EF_RX_ACK | EF_TIMEOUT));
-
-        if (evf_bits & EF_RX_ACK) {
-            if (udprdma_ack_covers(socket->tx_seq_nr_acked, sent_seq_nr)) {
+            if ((evf_bits & EF_RX_ACK) &&
+                udprdma_ack_covers(socket->tx_seq_nr_acked, sent_seq_nr)) {
+                CancelAlarm(_timeout_cb, socket);
+                ClearEventFlag(socket->event_flag, ~EF_TIMEOUT);
                 return UDPRDMA_OK;
             }
-            M_PRINTF("send_ll: stale ACK acked=%d sent=%d, retry %d\n",
-                socket->tx_seq_nr_acked, sent_seq_nr, retries + 1);
-        }
 
-        if (evf_bits & EF_TIMEOUT) {
-            M_PRINTF("send_ll: timeout seq=%d, retry %d\n", sent_seq_nr, retries + 1);
+            if (evf_bits & EF_TIMEOUT) {
+                M_PRINTF("send_ll: timeout seq=%d, retry %d\n", sent_seq_nr, retries + 1);
+                break;
+            }
+            M_DEBUG("send_ll: ignored stale ACK acked=%d sent=%d\n",
+                socket->tx_seq_nr_acked, sent_seq_nr);
         }
+        CancelAlarm(_timeout_cb, socket);
+        ClearEventFlag(socket->event_flag, ~EF_TIMEOUT);
 
+        /* Restore sequence number only when the actual send timeout expires. */
         socket->tx_seq_nr = sent_seq_nr;
     }
 
