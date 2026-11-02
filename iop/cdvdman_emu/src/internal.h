@@ -92,6 +92,7 @@ extern int sceCdBreak_internal(enum ECallSource source);
 
 extern int cdvdman_sendSCmd(u8 cmd, const void *in, u16 in_size, void *out, u16 out_size);
 extern void cdvdman_cb_event(int reason);
+extern void cdvdman_cb_read_end(int reason);
 
 extern void cdvdman_init(void);
 extern void cdvdman_initdev(void);

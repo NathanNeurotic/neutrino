@@ -130,8 +130,10 @@ int sceCdBreak_internal(enum ECallSource source)
 {
     M_DEBUG("%s() locked = %d\n", __FUNCTION__, sync_flag_locked);
 
+    // A read in flight: stop it like Sony's cdvdman does (see cdvdman_read_break). The read thread then
+    // ends it with SCECdErABRT and an SCECdFuncBreak callback.
     if (sync_flag_locked)
-        return 0;
+        return cdvdman_read_break();
 
     cdvdman_stat.status = SCECdStatPause;
 

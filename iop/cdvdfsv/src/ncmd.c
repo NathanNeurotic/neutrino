@@ -138,6 +138,10 @@ static inline int cdvd_readee(RpcCdvd_t *r)
         // Wait for read to complete
         sceCdSync(0);
 
+        // sceCdBreak cut this chunk short: cdvdfsv_buf holds sectors it never read. Send none of them.
+        if (sceCdGetError() == SCECdErABRT)
+            break;
+
         // Transfer data EE
         sysmemSendEE(cdvdfsv_buf, r->buf, nsectors * 2048);
 
@@ -229,6 +233,10 @@ static inline int cdvd_readee(RpcCdvd_t *r)
 
     while (1) {
         do {
+            /* A break (sceCdBreak) that lands while a chunk is in flight ends it with SCECdErABRT and stops the
+               read here. A break that lands in the gap between this check and the next sceCdRead is lost: no read
+               is in flight, so cdvdman takes its idle path and the next chunk starts with err reset. Sony's
+               cdvdfsv has the same window. */
             if ((sectors_to_read == 0) || (sceCdGetError() == SCECdErABRT)) {
                 *((u32 *)&curlsn_buf[0]) = nbytes;
                 sysmemSendEE2(&readee, r->eeaddr1, sizeof(cdvdfsv_readee_t), (void *)curlsn_buf, r->eeaddr2, 16);
@@ -253,6 +261,11 @@ static inline int cdvd_readee(RpcCdvd_t *r)
             while (sceCdRead(r->lsn, temp, (void *)fsvRbuf, NULL) == 0)
                 DelayThread(10000);
             sceCdSync(0);
+
+            /* sceCdBreak cut this chunk short: fsvRbuf holds sectors it never read. Send none of them; the check at
+               the top of the loop ends the read. */
+            if (sceCdGetError() == SCECdErABRT)
+                continue;
 
             size_64b = nsectors * sector_size;
             size_64bb = size_64b;
@@ -365,6 +378,10 @@ static inline int cdvd_readchain(RpcCdvdchain_t *ch)
                 DelayThread(10000);
             sceCdSync(0);
 
+            // sceCdBreak stopped this entry: end the chain here, as Sony's cdvdfsv does.
+            if (sceCdGetError() == SCECdErABRT)
+                return 1;
+
             readpos += tsectors * 2048;
         } else { // EE addr
             while (tsectors > 0) {
@@ -373,6 +390,12 @@ static inline int cdvd_readchain(RpcCdvdchain_t *ch)
                 while (sceCdRead(lsn, nsectors, cdvdfsv_buf, NULL) == 0)
                     DelayThread(10000);
                 sceCdSync(0);
+
+                /* sceCdBreak cut this chunk short: cdvdfsv_buf holds sectors it never read. Send none of them and
+                   end the chain here, as Sony's cdvdfsv does. */
+                if (sceCdGetError() == SCECdErABRT)
+                    return 1;
+
                 sysmemSendEE(cdvdfsv_buf, (void *)addr, nsectors * 2048);
 
                 lsn += nsectors;

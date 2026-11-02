@@ -13,6 +13,8 @@ static int cdvdman_ReadingThreadID;
 #define BOUNCE_BUF_SECTORS 1
 static u8 bounce_buf[BOUNCE_BUF_SECTORS * 2048];
 volatile unsigned char sync_flag_locked;
+static volatile unsigned char read_abort;     // sceCdBreak hit the read in flight: cdvdman_read_sectors stops at its next chunk
+static volatile unsigned char read_in_flight; // the read thread is still moving data (sync_flag_locked also covers the callback)
 
 
 //-------------------------------------------------------------------------
@@ -186,6 +188,13 @@ static void cdvdman_read_sectors(u32 lsn, unsigned int sectors, void *buf)
     for (ptr = buf, remaining = sectors; remaining > 0;) {
         unsigned int SectorsToRead = remaining;
 
+        /* sceCdBreak during this read (cdvdman_read_break): stop here, like the real drive stops at the sector it is on.
+           The read then ends with SCECdErABRT and an SCECdFuncBreak callback, and sceCdSync(0) returns. */
+        if (read_abort) {
+            cdvdman_stat.err = SCECdErABRT;
+            break;
+        }
+
         if (clocks_delay > 0) {
             // Limit transfers to a maximum length of 8, with a restricted transfer rate.
             iop_sys_clock_t TargetTime;
@@ -236,8 +245,11 @@ static void cdvdman_read_sectors(u32 lsn, unsigned int sectors, void *buf)
         }
     }
 
+    // A break that landed during the last chunk still ends this read as aborted, as on the real drive.
     // If we had a read that went past the end of media, after reading what we can, set the end of media error.
-    if (endOfMedia) {
+    if (read_abort) {
+        cdvdman_stat.err = SCECdErABRT;
+    } else if (endOfMedia) {
         cdvdman_stat.err = SCECdErEOM;
     }
 }
@@ -260,6 +272,9 @@ static void cdvdman_read_sectors_bounce(u32 lsn, u32 sectors, u16 sector_size, v
     u32 rpos = lsn;
 
     while (sectors > 0) {
+        if (read_abort) // sceCdBreak: cdvdman_read_sectors already ended with SCECdErABRT
+            break;
+
         nsectors = sectors;
         if (nsectors > BOUNCE_BUF_SECTORS)
             nsectors = BOUNCE_BUF_SECTORS;
@@ -270,6 +285,8 @@ static void cdvdman_read_sectors_bounce(u32 lsn, u32 sectors, u16 sector_size, v
             nsectors = 1;
 
         cdvdman_read_sectors(rpos, nsectors, bounce_buf);
+        if (read_abort) // cut short: bounce_buf holds sectors this read never produced, so copy none of them
+            break;
 
         rpos += nsectors;
         sectors -= nsectors;
@@ -319,6 +336,7 @@ static void cdvdman_read_thread(void *args)
             cdvdman_read_sectors_bounce(req.lba, req.sectors, req.sector_size, req.buf);
         else
             cdvdman_read_sectors(req.lba, req.sectors, req.buf);
+        read_in_flight = 0;
         ReadPos = 0; /* Reset the buffer offset indicator. */
         cdvdman_stat.status = SCECdStatPause;
 
@@ -327,7 +345,8 @@ static void cdvdman_read_thread(void *args)
         // As tested on official IOPRP images from original BIOS to IOPRP300
         // All sceCdRead reads perform a callback
         // After (and during) this callback from interrupt, new reads can be issued
-        cdvdman_cb_event(SCECdFuncRead);
+        // A read that sceCdBreak stopped ends like Sony's: SCECdErABRT and an SCECdFuncBreak callback.
+        cdvdman_cb_read_end(read_abort ? SCECdFuncBreak : SCECdFuncRead);
 
         M_DEBUG("  %s() done\n", __FUNCTION__);
     }
@@ -374,6 +393,8 @@ int sceCdRead_internal(u32 lsn, u32 sectors, void *buf, sceCdRMode *mode, enum E
             ClearEventFlag(cdvdman_stat.intr_ef, ~CDVDEF_MAN_UNLOCKED);
 
         sync_flag_locked = 1;
+        read_abort = 0;
+        read_in_flight = 1;
 
         cdvdman_stat.req.lba = lsn;
         cdvdman_stat.req.sectors = sectors;
@@ -394,6 +415,39 @@ int sceCdRead_internal(u32 lsn, u32 sectors, void *buf, sceCdRMode *mode, enum E
     //M_DEBUG("%s: waking up thread...done\n", __FUNCTION__);
 
     return 1;
+}
+
+//-------------------------------------------------------------------------
+/* sceCdBreak while a read is in flight. Sony's cdvdman stops the read the drive is on, ends it with
+   SCECdErABRT and an SCECdFuncBreak callback, and returns 1. Refusing it (returning 0) makes games that
+   cancel a read, such as Tales of the Abyss whenever its CRI sound driver switches ADX streams, wait for a
+   read they believe they cancelled.
+   Only a read the game issued itself is stopped. A stream fill still refuses the break (StmCallback counts
+   a finished fill as data, so a fill cut short would put garbage in the stream buffer), and so do the
+   module's own file-system and file-search reads, which do not check for an aborted read.
+   Once the data is in, only the completion callback is left, so there is nothing to stop. */
+int cdvdman_read_break(void)
+{
+    int OldState, result = 0;
+
+    // Decide and mark with interrupts suspended: otherwise the read can end and another be queued in
+    // between, and the break would cut that read short instead.
+    CpuSuspendIntr(&OldState);
+    if (sync_flag_locked && read_in_flight && cdvdman_stat.req.source == ECS_EXTERNAL) {
+        read_abort = 1;
+        cdvdman_stat.err = SCECdErABRT;
+        result = 1;
+    }
+    CpuResumeIntr(OldState);
+
+    return result;
+}
+
+//-------------------------------------------------------------------------
+// Whether the last read ended because of sceCdBreak (until the next read is queued).
+int cdvdman_read_aborted(void)
+{
+    return read_abort;
 }
 
 //-------------------------------------------------------------------------

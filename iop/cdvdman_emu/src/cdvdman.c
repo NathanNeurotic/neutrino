@@ -27,6 +27,7 @@ struct cdvdman_cb_data
     sceCdCBFunc user_cb;
     StmCallback_t stm0_cb;
     int reason;
+    int read_end; // this event ends a read: unlock the drive for the next one
 };
 
 cdvdman_status_t cdvdman_stat;
@@ -222,19 +223,31 @@ retry:
 }
 
 //--------------------------------------------------------------
-void cdvdman_cb_event(int reason)
+static void cdvdman_cb_fire(int reason, int read_end)
 {
     iop_sys_clock_t callback_delay = {0,0};
 
     M_DEBUG("    %s(%d) cb=0x%x\n", __FUNCTION__, reason, cb_data.user_cb);
 
     cb_data.reason = reason;
+    cb_data.read_end = read_end;
 
     ClearEventFlag(cdvdman_stat.intr_ef, ~CDVDEF_CB_DONE);
     SetAlarm(&callback_delay, &event_alarm_cb, &cb_data);
     WaitEventFlag(cdvdman_stat.intr_ef, CDVDEF_CB_DONE, WEF_AND, NULL);
 
     M_DEBUG("    %s(%d) done\n", __FUNCTION__, reason);
+}
+
+void cdvdman_cb_event(int reason)
+{
+    cdvdman_cb_fire(reason, 0);
+}
+
+// The read thread ends every read with this: SCECdFuncRead, or SCECdFuncBreak when sceCdBreak stopped it.
+void cdvdman_cb_read_end(int reason)
+{
+    cdvdman_cb_fire(reason, 1);
 }
 
 //--------------------------------------------------------------
@@ -245,8 +258,8 @@ static unsigned int event_alarm_cb(void *args)
 
     M_DEBUG("      %s reason=%d cb=0x%x\n", __FUNCTION__, cb_data->reason, cb_data->user_cb);
 
-    // Allow new read to start
-    if (cb_data->reason == SCECdFuncRead) {
+    // Allow new read to start (a read ends with SCECdFuncRead, or SCECdFuncBreak when it was stopped)
+    if (cb_data->read_end) {
         sync_flag_locked = 0;
         iSetEventFlag(cdvdman_stat.intr_ef, CDVDEF_MAN_UNLOCKED);
     }

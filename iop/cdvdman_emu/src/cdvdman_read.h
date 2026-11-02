@@ -14,6 +14,8 @@ extern volatile unsigned char sync_flag_locked;
 void cdvdman_read_init();
 
 int sceCdRead_internal(u32 lsn, u32 sectors, void *buf, sceCdRMode *mode, enum ECallSource source);
+int cdvdman_read_break(void);
+int cdvdman_read_aborted(void);
 StmCallback_t cdvdman_read_set_stm0_callback(StmCallback_t callback);
 
 

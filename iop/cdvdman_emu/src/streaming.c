@@ -36,6 +36,24 @@ static void StmCallback(void)
 
     //M_DEBUG("StmCallback: %08lx, wr: %u, rd: %u, streamed: %u\n", cdvdman_stat.StreamingData.Stlsn, cdvdman_stat.StreamingData.StWritePtr, cdvdman_stat.StreamingData.StReadPtr, cdvdman_stat.StreamingData.StStreamed);
 
+    if (cdvdman_read_aborted()) {
+        /* sceCdBreak stopped the read that just ended. A fill queued now would reset the error to SCECdErNO
+           before the game (or cdvdfsv) reads SCECdErABRT, so leave the fill to the retry alarm. Replace any
+           retry already pending, so there is never more than one: sceCdStStop and sceCdStPause cancel one. */
+        iop_sys_clock_t StmScheduleClock;
+
+        StmScheduleClock.lo = 0x00704000;
+        StmScheduleClock.hi = 0;
+        if (QueryIntrContext()) {
+            iCancelAlarm(&StmScheduleCb, &cdvdman_stat.StreamingData);
+            iSetAlarm(&StmScheduleClock, &StmScheduleCb, &cdvdman_stat.StreamingData);
+        } else {
+            CancelAlarm(&StmScheduleCb, &cdvdman_stat.StreamingData);
+            SetAlarm(&StmScheduleClock, &StmScheduleCb, &cdvdman_stat.StreamingData);
+        }
+        return;
+    }
+
     StStartFillStreamBuffer();
 }
 

@@ -63,6 +63,7 @@ I_DelayThread
 I_SetAlarm
 I_iSetAlarm
 I_CancelAlarm
+I_iCancelAlarm
 I_USec2SysClock
 I_SleepThread
 I_iWakeupThread
