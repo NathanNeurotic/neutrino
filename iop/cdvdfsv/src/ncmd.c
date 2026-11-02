@@ -238,6 +238,17 @@ static inline int cdvd_readee(RpcCdvd_t *r)
                is in flight, so cdvdman takes its idle path and the next chunk starts with err reset. Sony's
                cdvdfsv has the same window. */
             if ((sectors_to_read == 0) || (sceCdGetError() == SCECdErABRT)) {
+                if (sectors_to_read != 0) {
+                    /* A break stopped the read. Sony's cdvdfsv still sends the alignment record after an early break,
+                       and so does this: the EE's completion callback copies whatever record is in place, so a skipped
+                       send would replay the previous read's record into that read's buffer. The record keeps only
+                       the head bytes, and only if the first chunk finished; the tail was never read. The EE is told
+                       only the bytes actually sent. */
+                    if (sectors_to_read == r->sectors)
+                        readee.b1len = 0;
+                    readee.b2len = 0;
+                    nbytes = bytesent;
+                }
                 *((u32 *)&curlsn_buf[0]) = nbytes;
                 sysmemSendEE2(&readee, r->eeaddr1, sizeof(cdvdfsv_readee_t), (void *)curlsn_buf, r->eeaddr2, 16);
                 return nbytes;
