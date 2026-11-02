@@ -417,7 +417,7 @@ static inline int cdvd_readchain(RpcCdvdchain_t *ch)
         }
 
         // The pointer to the read position variable within EE RAM is stored at ((RpcCdvdchain_t *)buf)[65].sectors.
-        sysmemSendEE(&readpos, (void *)ch[65].sectors, sizeof(readpos));
+        sysmemSendEE(&readpos, (void *)ch_base[65].sectors, sizeof(readpos));
     }
 
     return 1;
