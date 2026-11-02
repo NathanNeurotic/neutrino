@@ -9,6 +9,7 @@ typedef void (*StmCallback_t)(void);
 
 
 extern volatile unsigned char sync_flag_locked;
+extern volatile unsigned char cdvdfsv_break; // set by every sceCdBreak that returns 1: see cdvdman_read.c
 
 
 void cdvdman_read_init();

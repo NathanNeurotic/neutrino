@@ -607,6 +607,10 @@ int sceCdSC(int code, int *param)
         case CDSC_SET_ERROR:
             result = cdvdman_stat.err = *param;
             break;
+        case CDSC_GET_BREAK_FLAG:
+            *param = (int)&cdvdfsv_break;
+            result = 1;
+            break;
         default:
             M_DEBUG("%s(0x%X, 0x%X) unknown code\n", __FUNCTION__, code, *param);
             result = 1; // dummy result

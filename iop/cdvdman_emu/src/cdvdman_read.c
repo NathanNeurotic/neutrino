@@ -15,6 +15,11 @@ static u8 bounce_buf[BOUNCE_BUF_SECTORS * 2048];
 volatile unsigned char sync_flag_locked;
 static volatile unsigned char read_abort;     // sceCdBreak hit the read in flight: cdvdman_read_sectors stops at its next chunk
 static volatile unsigned char read_in_flight; // the read thread is still moving data (sync_flag_locked also covers the callback)
+/* Set by every sceCdBreak that returns 1, and by nothing else. cdvdfsv clears it when it starts an EE read and ends
+   that read once it is set (CDSC_GET_BREAK_FLAG), as Sony's cdvdfsv does for chain reads with a flag of its own.
+   The error code cannot tell it: a stream fill, or sceCdDiskReady on another cdvdfsv thread, can reset SCECdErABRT
+   before cdvdfsv looks, and a chunk the break cut short would then reach the EE as data. */
+volatile unsigned char cdvdfsv_break;
 
 
 //-------------------------------------------------------------------------
@@ -436,6 +441,7 @@ int cdvdman_read_break(void)
     if (sync_flag_locked && read_in_flight && cdvdman_stat.req.source == ECS_EXTERNAL) {
         read_abort = 1;
         cdvdman_stat.err = SCECdErABRT;
+        cdvdfsv_break = 1;
         result = 1;
     }
     CpuResumeIntr(OldState);

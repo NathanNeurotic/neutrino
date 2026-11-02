@@ -138,6 +138,7 @@ int sceCdBreak_internal(enum ECallSource source)
     cdvdman_stat.status = SCECdStatPause;
 
     cdvdman_stat.err = SCECdErABRT;
+    cdvdfsv_break = 1; // an EE read between two of its chunks stops too (cdvdfsv)
 
     // Notify external irx that sceCdBreak has finished
     if (source == ECS_EXTERNAL)

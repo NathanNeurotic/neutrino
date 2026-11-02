@@ -73,6 +73,7 @@ void *sceGetFsvRbuf2(int *size);
 #define CDVDEF_CB_DONE       0x2000 // callback completed
 
 // Codes for use with sceCdSC()
+#define CDSC_GET_BREAK_FLAG   0xFFFFFFED // Get the address of the flag sceCdBreak sets. CDVDFSV clears it when it starts an EE read.
 #define CDSC_GET_DEBUG_STATUS 0xFFFFFFF0 // Get debug status flag.
 #define CDSC_GET_INTRFLAG     0xFFFFFFF5 // Get interrupt flag.
 #define CDSC_IO_SEMA          0xFFFFFFF6 // Wait (param != 0) or signal (param == 0) high-level I/O semaphore.

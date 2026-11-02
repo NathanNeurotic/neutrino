@@ -33,5 +33,6 @@ extern int sceCdChangeThreadPriority(int priority);
 extern u8 *cdvdfsv_buf;
 extern int cdvdfsv_size;
 extern int cdvdfsv_sectors;
+extern volatile unsigned char *cdvdfsv_break; // CDVDMAN's flag that sceCdBreak sets: see CDSC_GET_BREAK_FLAG
 
 #endif

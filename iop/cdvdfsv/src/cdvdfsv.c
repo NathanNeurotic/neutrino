@@ -30,6 +30,8 @@ static void *cbrpc_S596(int fno, void *buf, int size);
 u8 *cdvdfsv_buf;
 int cdvdfsv_size;
 int cdvdfsv_sectors;
+static volatile unsigned char cdvdfsv_no_break; // never set: stands in if CDVDMAN gives no break flag
+volatile unsigned char *cdvdfsv_break = &cdvdfsv_no_break;
 
 static SifRpcDataQueue_t rpc0_DQ;
 static SifRpcDataQueue_t rpc1_DQ;
@@ -133,7 +135,7 @@ int _start(int argc, char *argv[])
 //-------------------------------------------------------------------------
 static void init_thread(void *args)
 {
-    int cdvdman_intr_ef, dummy;
+    int cdvdman_intr_ef, dummy, break_flag = 0;
 
     M_DEBUG("%s\n", __FUNCTION__);
 
@@ -141,6 +143,11 @@ static void init_thread(void *args)
 
     cdvdfsv_buf = sceGetFsvRbuf2(&cdvdfsv_size);
     cdvdfsv_sectors = cdvdfsv_size / 2048;
+    /* The CDVDMAN built with this module always answers. One that does not leaves break_flag at 0: keep the stand-in
+       then, rather than have the EE reads write to IOP address 0. */
+    sceCdSC(CDSC_GET_BREAK_FLAG, &break_flag);
+    if (break_flag != 0)
+        cdvdfsv_break = (volatile unsigned char *)break_flag;
     cdvdfsv_startrpcthreads();
 
     // Simplified poffloop: block until power-off event, then exit.

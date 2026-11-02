@@ -14,6 +14,13 @@ jobs:
           cc -std=c99 -Wall -Wextra -Werror -pedantic iop/udpfs/tests/test_ack_sequence.c -o /tmp/test_udpfs_ack
           /tmp/test_udpfs_ack
 
+  cdvdfsv-break-host-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check an EE read through CDVDFSV stops on sceCdBreak and sends only the sectors it read
+        run: python3 iop/cdvdfsv/tests/test_cdvdfsv_break.py -v
+
   build:
     runs-on: ubuntu-latest
     container: ps2max/dev:v20260228
